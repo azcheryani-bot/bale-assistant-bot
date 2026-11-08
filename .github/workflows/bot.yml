@@ -34,4 +34,4 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           BALE_WALLET_TOKEN: ${{ secrets.BALE_WALLET_TOKEN }}
         run: |
-          python bale_assistant.py
+          exec python bale_assistant.py
