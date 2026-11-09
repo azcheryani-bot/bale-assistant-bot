@@ -237,6 +237,49 @@ def flush_all_to_db():
             try: conn.close()
             except: pass
 
+# --- دیسپچ اجرای بعدی ورک‌فلو: زنجیره خودکار اجراها ---
+# موقع خاموشی، بعد از فلاش نهایی، با GITHUB_TOKEN همین ورک‌فلو را دوباره
+# دیسپچ می‌کند تا اگر cron گیت‌هاب جا ماند، زنجیره قطع نشود.
+# (رویداد workflow_dispatch با GITHUB_TOKEN هم اجرای جدید می‌سازد.)
+# اول چک می‌کند اجرای دیگری در صف یا در حال اجرا نباشد تا اجرای تکراری
+# ساخته نشود — مثلاً وقتی لغو به‌خاطر cron بوده و اجرای بعدی از قبل هست.
+def _dispatch_next_run():
+    token = os.environ.get("GITHUB_TOKEN")
+    repo = os.environ.get("GITHUB_REPOSITORY")
+    run_id = os.environ.get("GITHUB_RUN_ID")
+    if not token or not repo or not run_id:
+        print("⚠️ دیسپچ اجرای بعدی انجام نشد: GITHUB_TOKEN یا اطلاعات اجرا در دسترس نیست.", flush=True)
+        return
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    try:
+        r = requests.get(
+            f"https://api.github.com/repos/{repo}/actions/workflows/bot.yml/runs?per_page=10",
+            headers=headers, timeout=15)
+        if r.status_code == 200:
+            for run in r.json().get("workflow_runs", []):
+                if str(run.get("id")) != str(run_id) and run.get("status") in ("queued", "in_progress", "waiting", "requested", "pending"):
+                    print(f"⏭️ اجرای بعدی از قبل وجود دارد (run #{run.get('id')})؛ دیسپچ انجام نشد.", flush=True)
+                    return
+        else:
+            print(f"⚠️ بررسی اجراهای موجود ناموفق بود (HTTP {r.status_code})؛ دیسپچ انجام می‌شود.", flush=True)
+    except Exception as e:
+        print(f"⚠️ بررسی اجراهای موجود ناموفق بود ({e})؛ دیسپچ انجام می‌شود.", flush=True)
+    try:
+        ref = os.environ.get("GITHUB_REF_NAME", "main")
+        r = requests.post(
+            f"https://api.github.com/repos/{repo}/actions/workflows/bot.yml/dispatches",
+            headers=headers, json={"ref": ref}, timeout=15)
+        if r.status_code == 204:
+            print("✅ اجرای بعدی ورک‌فلو با موفقیت دیسپچ شد.", flush=True)
+        else:
+            print(f"⚠️ دیسپچ اجرای بعدی ناموفق بود (HTTP {r.status_code}): {r.text[:200]}", flush=True)
+    except Exception as e:
+        print(f"⚠️ دیسپچ اجرای بعدی ناموفق بود: {e}", flush=True)
+
 def _handle_shutdown_signal(signum, frame):
     global _IS_SHUTTING_DOWN
     if _IS_SHUTTING_DOWN:
@@ -244,6 +287,7 @@ def _handle_shutdown_signal(signum, frame):
     _IS_SHUTTING_DOWN = True
     print("🛑 سیگنال توقف در بله اسیستنت دریافت شد. در حال ذخیره دیتا از رم به دیتابیس...", flush=True)
     flush_all_to_db()
+    _dispatch_next_run()
     sys.exit(0)
 
 atexit.register(flush_all_to_db)
