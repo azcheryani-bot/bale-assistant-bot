@@ -5,6 +5,10 @@ on:
     - cron: '58 */5 * * *'
   workflow_dispatch:
 
+permissions:
+  contents: read
+  actions: write
+
 concurrency:
   group: run-bale-assistant-bot
   cancel-in-progress: true
@@ -12,7 +16,6 @@ concurrency:
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 358
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -33,5 +36,6 @@ jobs:
           GEMINI_API_KEYS: ${{ secrets.GEMINI_API_KEYS }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           BALE_WALLET_TOKEN: ${{ secrets.BALE_WALLET_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           exec python bale_assistant.py
